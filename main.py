@@ -26,7 +26,10 @@ Floor = (34, 34, 34)
 #game variables
 GRAVITY = 0.75
 TILE_SIZE = 50
-
+ROWS = 16
+COLS = 150
+TILE_SIZE = SCREEN_HEIGHT // ROWS
+TILE_TYPES = 21
 #colors
 RED = (139, 0, 0)
 WHITE = (255, 255, 255)
@@ -41,7 +44,7 @@ attack = False
 
 #attack effects
 attack_effect = pygame.image.load('images/icons/meleeatk.png').convert_alpha()
-attack_effect = pygame.transform.scale(attack_effect, (100, 100))
+attack_effect = pygame.transform.scale(attack_effect, (80, 80))
 
 #items
 health_stone = pygame.image.load('images/icons/health_stone.png').convert_alpha()
@@ -59,6 +62,7 @@ font = pygame.font.SysFont('Bauhaus 93', 30)
 def draw_text(text, font, text_col, x, y):
     img = font.render(text, True, text_col)
     screen.blit(img, (x, y))
+
 
 #Entity class
 class Entity(pygame.sprite.Sprite):
@@ -89,6 +93,7 @@ class Entity(pygame.sprite.Sprite):
         #ai variables
         self.move_counter = 0
         self.idling = False
+        self.vision = pygame.Rect(0, 0, 400, 30)
         self.idling_counter = 0
 
 
@@ -143,7 +148,11 @@ class Entity(pygame.sprite.Sprite):
         #check collision with floor
         if self.rect.bottom + dy > 1000:
             dy = 1000 - self.rect.bottom
-            self.in_air = False    
+            self.in_air = False
+
+        if self.char_type == 'player':
+            if self.rect.left + dx < 0 or self.rect.right + dx > SCREEN_WIDTH:
+                dx = 0        
 
         #update rect position // for collision detection
         self.rect.x += dx
@@ -158,32 +167,45 @@ class Entity(pygame.sprite.Sprite):
             attack_group.add(effect)
             if effect.direction == -1:
                 effect.image = pygame.transform.flip(effect.image, True, False)
-
+                if self.char_type == 'enemy':
+                    self.attack_cooldown = 60  # enemies attack slower
+            
+                    
     def ai(self):
-        # simple patrol: move right when direction == 1, left when -1
-        if not (self.is_alive and player.is_alive):
-            return
-        if self.idling == False and random.randint(1, 200) == 1:
-            self.update_action(0)  # idle
-            self.idling = True
-            self.idling_counter = 50
-        if self.idling == False:
-            if self.direction == 1:
-                # move(left=False, right=True)
-                self.move(False, True)
+        if self.is_alive and player.is_alive:
+            if self.idling == False and random.randint(1, 200) == 1:
+                self.update_action(0)  # idle
+                self.idling = True
+                self.idling_counter = 50
+            #check if the ai in near the player
+            if self.vision.colliderect(player.rect):
+                #stop moving and face the player
+                self.update_action(0)  # idle
+                #shoot
+                self.update_action(3)  # heavy attack
+                self.attack()
+                
             else:
-                # move(left=True, right=False)
-                self.move(True, False)
-            self.update_action(1)  # walk        
-            self.move_counter += 1
-            # after TILE_SIZE frames flip direction and reset counter
-            if self.move_counter >= TILE_SIZE:
-                self.direction *= -1
-                self.move_counter = 0 
-        else:
-            self.idling_counter -= 1
-            if self.idling_counter <= 0:
-                self.idling = False               
+
+                if self.idling == False:
+                    if self.direction == 1:
+                        # move(left=False, right=True)
+                        self.move(False, True)
+                    else:
+                        # move(left=True, right=False)
+                        self.move(True, False)
+                    self.update_action(1)  # walk        
+                    self.move_counter += 1
+                    #update ai vision rect
+                    self.vision.center = (self.rect.centerx + 200 * self.direction, self.rect.centery)
+                    # after TILE_SIZE frames flip direction and reset counter
+                    if self.move_counter >= TILE_SIZE:
+                        self.direction *= -1
+                        self.move_counter = 0 
+                else:
+                    self.idling_counter -= 1
+                    if self.idling_counter <= 0:
+                        self.idling = False               
 
     def update_ani(self):
         #update animation
@@ -200,7 +222,8 @@ class Entity(pygame.sprite.Sprite):
                 self.frame_index = len(self.animation_list[self.action]) - 1
             else:
                 self.frame_index = 0
-
+        
+            
     def update_action(self, new_action):
         #check if the new action is different to the previous one
         if new_action != self.action:
@@ -219,7 +242,6 @@ class Entity(pygame.sprite.Sprite):
 
     def draw(self):
         screen.blit(pygame.transform.flip(self.image, self.flip, False), self.rect)
-             
 
             
 class ItemBox(pygame.sprite.Sprite):
@@ -234,7 +256,7 @@ class ItemBox(pygame.sprite.Sprite):
         # check if the player has picked up the box
         if pygame.sprite.collide_rect(self, player):
             if self.item_type == 'Health':
-                player.health += 25
+                player.health += 30
                 if player.health > player.max_health:
                     player.health = player.max_health
             elif self.item_type == 'Speed':
@@ -257,15 +279,15 @@ class HealthBar():
         self.health = health
         #calculate health ratio
         ratio = self.health / self.max_health
-        pygame.draw.rect(screen, BLACK, (self.x - 2, self.y - 2, 154, 24))
-        pygame.draw.rect(screen, RED, (self.x, self.y, 150, 20))
-        pygame.draw.rect(screen, GREEN, (self.x, self.y, 150 * ratio, 20))
+        pygame.draw.rect(screen, BLACK, (self.x - 2, self.y - 2, 354, 44))
+        pygame.draw.rect(screen, RED, (self.x, self.y, 350, 40))
+        pygame.draw.rect(screen, GREEN, (self.x, self.y, 350 * ratio, 40))
 
 
 class Attack(pygame.sprite.Sprite):
     def __init__(self, x, y, direction, owner):
         super().__init__()
-        self.speed = 20
+        self.speed = 10
         self.image = attack_effect
         self.rect = self.image.get_rect()
         self.rect.center = (x, y)
@@ -280,14 +302,13 @@ class Attack(pygame.sprite.Sprite):
         if self.rect.right < 0 or self.rect.left > SCREEN_WIDTH:
             self.kill()
             return
-
         # check collision with targets, skip owner
         for target in (player, enemy_group):
             if target is self.owner:
                 continue
             if player.is_alive and self.rect.colliderect(player.rect):
-                player.health -= 10
-                self.kill()
+                player.health -= 5
+                self.kill()    
             for enemy in enemy_group:
                 if enemy.is_alive and self.rect.colliderect(enemy.rect):
                     enemy.health -= 40
@@ -300,6 +321,7 @@ enemy_group = pygame.sprite.Group()
 attack_group = pygame.sprite.Group()
 item_box_group = pygame.sprite.Group()
 
+
 #temp
 item_box = ItemBox('Health', 1000, 930)
 item_box_group.add(item_box)
@@ -308,38 +330,39 @@ item_box_group.add(item_box)
 
 
 # Entity location and scale
-player = Entity('player', 100, 900, 4, 6)
+player = Entity('player', 100, 900, 3, 5)
 health_bar = HealthBar(10, 10, player.health, player.max_health)
 
-enemy = Entity('enemy', 200, 900, 4, 5)
+enemy = Entity('enemy', 500, 900, 3, 4)
 enemy_group.add(enemy)
-enemy2 = Entity('enemy', 400, 900, 4, 5)
+enemy2 = Entity('enemy', 1200, 900, 3, 4)
 enemy_group.add(enemy2)
 
 # Main menu loop
+
 running = True
 while running:
-    # draw main menu video
-    main_menu.draw(screen, (0, 0))
-    pygame.display.update()
+     # draw main menu video
+     main_menu.draw(screen, (0, 0))
+     pygame.display.update()
     # pygame quit
-    for event in pygame.event.get():
-        if event.type == pygame.QUIT:
-            running = False
-            main_menu.close()
-        if event.type == pygame.MOUSEBUTTONDOWN:
-            running = False
-            main_menu.close()
-        if event.type == pygame.KEYDOWN:
-            if event.key == pygame.K_ESCAPE:
-                running = False
-                main_menu.close()
-        gameclock.tick(fps)
+     for event in pygame.event.get():
+         if event.type == pygame.QUIT:
+             running = False
+             main_menu.close()
+         if event.type == pygame.MOUSEBUTTONDOWN:
+             running = False
+             main_menu.close()
+         if event.type == pygame.KEYDOWN:
+               if event.key == pygame.K_ESCAPE:
+                 running = False
+                 main_menu.close()
+                 gameclock.tick(fps)    
         
 
                            
     
-#game loop 
+#game loop  
 running = True
 while running:
     #background
@@ -359,6 +382,10 @@ while running:
             player.update_action(1)  # walk
         else:
             player.update_action(0)  # idle
+    else: 
+        draw_text('GAME OVER', font, RED, SCREEN_WIDTH // 2 - 100, SCREEN_HEIGHT // 2)  
+        draw_text('Press R to Restart', font, RED, SCREEN_WIDTH // 2 - 130, SCREEN_HEIGHT // 2 + 50)
+                    
 
     # then update animation and draw
     #player update and draw
@@ -389,9 +416,10 @@ while running:
             # optional: delattr base_speed/speed_boost_start_time if you want to clean up
 
     #text draw
+    draw_text(f'Health: {player.health}', font, WHITE, 50, 70)
     health_bar.draw(player.health)
     if player.speed_boost_active:
-        screen.blit(speed_boost, (10, 40))
+        screen.blit(speed_boost, (10, 60))
     
     # move regardless (or only if alive, as you prefer)
     if player.is_alive:
@@ -413,7 +441,28 @@ while running:
             if event.key == pygame.K_SPACE:
                 player.atk = True
                 attack = True
-     #reset inputs           
+            if event.key == pygame.K_r:
+
+                enemy_group.empty()
+                item_box_group.empty()
+                attack_group.empty()
+
+
+                item_box = ItemBox('Health', 1000, 930)
+                item_box_group.add(item_box)
+                item_box = ItemBox('Speed', 800, 930)
+                item_box_group.add(item_box)
+                # Entity location and scale
+                player = Entity('player', 100, 900, 3, 5)
+                health_bar = HealthBar(10, 10, player.health, player.max_health)
+                enemy = Entity('enemy', 500, 900, 3, 4)
+                enemy_group.add(enemy)
+                enemy2 = Entity('enemy', 1200, 900, 3, 4)
+                enemy_group.add(enemy2)
+                
+
+   
+    #reset inputs           
         if event.type == pygame.KEYUP:
             if event.key == pygame.K_a:
                 moving_left = False
@@ -422,8 +471,8 @@ while running:
             if event.key == pygame.K_SPACE:
                 player.atk = False
                 attack = False
-                       
-           
+                    
+        
 
     pygame.display.update()
     gameclock.tick(fps)
