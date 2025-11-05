@@ -1,10 +1,13 @@
 import pygame
+from pygame import mixer
 import os
 import random
 from pyvidplayer import Video
 from typing import cast
 
+mixer.init()
 pygame.init()
+
 
 #setup
 SCREEN_WIDTH = 1920
@@ -37,10 +40,32 @@ GREEN = (0, 255, 0)
 BLACK = (0, 0, 0)
 
 
+
 #Define player action variables
 moving_left = False
 moving_right = False
 attack = False
+
+#load music and sounds
+walk_fx = pygame.mixer.Sound('audio/walk.mp3')
+walk_fx.set_volume(0.3)
+hit_fx = pygame.mixer.Sound('audio/hit.mp3')
+hit_fx.set_volume(0.3)
+zombie_fx = pygame.mixer.Sound('audio/zombie.mp3')
+zombie_fx.set_volume(0.3)
+jump_fx = pygame.mixer.Sound('audio/jump.mp3')
+jump_fx.set_volume(0.3)
+attack_fx = pygame.mixer.Sound('audio/attack.mp3')
+attack_fx.set_volume(0.1)
+death_fx = pygame.mixer.Sound('audio/death.mp3')
+death_fx.set_volume(0.1)
+heal_fx = pygame.mixer.Sound('audio/heal.mp3')
+heal_fx.set_volume(0.3)
+boost_fx = pygame.mixer.Sound('audio/boost.mp3')
+boost_fx.set_volume(0.3)
+
+
+
 
 #attack effects
 attack_effect = pygame.image.load('images/icons/meleeatk.png').convert_alpha()
@@ -152,8 +177,11 @@ class Entity(pygame.sprite.Sprite):
 
         if self.char_type == 'player':
             if self.rect.left + dx < 0 or self.rect.right + dx > SCREEN_WIDTH:
-                dx = 0        
-
+                dx = 0
+        if self.char_type == 'enemy':
+            if self.rect.left + dx < 0 or self.rect.right + dx > SCREEN_WIDTH:
+                dx = 0
+                            
         #update rect position // for collision detection
         self.rect.x += dx
         self.rect.y += dy
@@ -169,7 +197,7 @@ class Entity(pygame.sprite.Sprite):
                 effect.image = pygame.transform.flip(effect.image, True, False)
                 if self.char_type == 'enemy':
                     self.attack_cooldown = 60  # enemies attack slower
-            
+        attack_fx.play()    
                     
     def ai(self):
         if self.is_alive and player.is_alive:
@@ -205,7 +233,10 @@ class Entity(pygame.sprite.Sprite):
                 else:
                     self.idling_counter -= 1
                     if self.idling_counter <= 0:
-                        self.idling = False               
+                        self.idling = False
+
+        
+
 
     def update_ani(self):
         #update animation
@@ -240,8 +271,16 @@ class Entity(pygame.sprite.Sprite):
             self.is_alive = False
             self.update_action(4) # death
 
+
     def draw(self):
         screen.blit(pygame.transform.flip(self.image, self.flip, False), self.rect)
+
+    def take_damage(self, amount):
+        if self.is_alive:
+            self.health -= amount
+            # Play hit animation
+            self.update_action(5)  # 5 is the 'hit' animation index
+            self.check_alive()            
 
             
 class ItemBox(pygame.sprite.Sprite):
@@ -293,6 +332,7 @@ class Attack(pygame.sprite.Sprite):
         self.rect.center = (x, y)
         self.direction = direction
         self.owner = owner  # owner entity to avoid hitting self
+        
 
     def update(self):
         # move attack effect
@@ -303,23 +343,43 @@ class Attack(pygame.sprite.Sprite):
             self.kill()
             return
         # check collision with targets, skip owner
-        for target in (player, enemy_group):
-            if target is self.owner:
-                continue
-            if player.is_alive and self.rect.colliderect(player.rect):
-                player.health -= 5
-                self.kill()    
+        if self.owner is not player and player.is_alive and self.rect.colliderect(player.rect):
+            player.take_damage(5)
+            self.kill()
+            return
+        if self.owner not in enemy_group:
             for enemy in enemy_group:
                 if enemy.is_alive and self.rect.colliderect(enemy.rect):
-                    enemy.health -= 40
+                    enemy.take_damage(40)
                     self.kill()
-                
-                   
+                    return
+class ScreenFade():
+    def __init__(self, direction, colour, speed):
+        self.direction = direction
+        self.colour = colour
+        self.speed = speed
+        self.fade_counter = 0
 
+    def fade(self):
+        fade_complete = False
+        self.fade_counter += self.speed
+        pygame.draw.rect(screen, self.colour, (0, 0, SCREEN_WIDTH, 0 + self.fade_counter))
+        if self.fade_counter >= SCREEN_WIDTH:
+            fade_complete = True
+            
+            return fade_complete
+            
+            
+#create screen fades
+death_fade = ScreenFade(2, RED, 4)          
+
+            
+            
 #Create Group
 enemy_group = pygame.sprite.Group()
 attack_group = pygame.sprite.Group()
 item_box_group = pygame.sprite.Group()
+player_group = pygame.sprite.Group()
 
 
 #temp
@@ -330,13 +390,22 @@ item_box_group.add(item_box)
 
 
 # Entity location and scale
+#player and healthbar
 player = Entity('player', 100, 900, 3, 5)
+player_group.add(player)
 health_bar = HealthBar(10, 10, player.health, player.max_health)
 
+#enemies
 enemy = Entity('enemy', 500, 900, 3, 4)
 enemy_group.add(enemy)
 enemy2 = Entity('enemy', 1200, 900, 3, 4)
 enemy_group.add(enemy2)
+enemy3 = Entity('enemy', 1400, 900, 3, 4)
+enemy_group.add(enemy3)
+enemy4 = Entity('enemy', 1500, 900, 3, 4)
+enemy_group.add(enemy4)
+enemy5 = Entity('enemy', 1600, 900, 3, 4)
+enemy_group.add(enemy5)
 
 # Main menu loop
 
@@ -359,8 +428,10 @@ while running:
                  main_menu.close()
                  gameclock.tick(fps)    
         
-
-                           
+pygame.mixer.music.load('audio/music.mp3')
+pygame.mixer.music.set_volume(0.1)
+pygame.mixer.music.play()
+            
     
 #game loop  
 running = True
@@ -368,12 +439,12 @@ while running:
     #background
     screen.fill((0, 0, 0))
     screen.blit(first_bg, (0, 0))
-    pygame.draw.line(screen, Floor, (0, 980), (1920, 980), 120)
-
+    
+    
     #update player action
     if player.is_alive:
         if attack:
-            player.attack()
+            player.attack()    
         if player.atk:
             player.update_action(3)  # heavy attack
         elif player.in_air:
@@ -383,9 +454,15 @@ while running:
         else:
             player.update_action(0)  # idle
     else: 
-        draw_text('GAME OVER', font, RED, SCREEN_WIDTH // 2 - 100, SCREEN_HEIGHT // 2)  
-        draw_text('Press R to Restart', font, RED, SCREEN_WIDTH // 2 - 130, SCREEN_HEIGHT // 2 + 50)
-                    
+        death_fx.play()
+        zombie_fx.play()
+        enemy_group.empty()
+        attack_group.empty()
+        item_box_group.empty()
+        death_fade.fade()
+
+        draw_text('GAME OVER', font, WHITE, 870, 540)
+        draw_text('Press r to restart', font , WHITE, 855, 600)
 
     # then update animation and draw
     #player update and draw
@@ -416,7 +493,6 @@ while running:
             # optional: delattr base_speed/speed_boost_start_time if you want to clean up
 
     #text draw
-    draw_text(f'Health: {player.health}', font, WHITE, 50, 70)
     health_bar.draw(player.health)
     if player.speed_boost_active:
         screen.blit(speed_boost, (10, 60))
@@ -431,17 +507,23 @@ while running:
             running = False
         if event.type == pygame.KEYDOWN:
             if event.key == pygame.K_a:
+                walk_fx.play(-1)
                 moving_left = True
             if event.key == pygame.K_d:
+                walk_fx.play(-1)
                 moving_right = True
             if event.key == pygame.K_w and player.is_alive:
                 player.jump = True
+                jump_fx.play()
             if event.key == pygame.K_ESCAPE:
                 running = False
             if event.key == pygame.K_SPACE:
                 player.atk = True
                 attack = True
             if event.key == pygame.K_r:
+                death_fx.stop()
+                zombie_fx.stop()
+                pygame.mixer.music.rewind()
 
                 enemy_group.empty()
                 item_box_group.empty()
@@ -459,14 +541,22 @@ while running:
                 enemy_group.add(enemy)
                 enemy2 = Entity('enemy', 1200, 900, 3, 4)
                 enemy_group.add(enemy2)
+                enemy3 = Entity('enemy', 1400, 900, 3, 4)
+                enemy_group.add(enemy3)
+                enemy4 = Entity('enemy', 1500, 900, 3, 4)
+                enemy_group.add(enemy4)
+                enemy5 = Entity('enemy', 1600, 900, 3, 4)
+                enemy_group.add(enemy5)
                 
 
    
     #reset inputs           
         if event.type == pygame.KEYUP:
             if event.key == pygame.K_a:
+                walk_fx.stop()
                 moving_left = False
             if event.key == pygame.K_d:
+                walk_fx.stop()
                 moving_right = False
             if event.key == pygame.K_SPACE:
                 player.atk = False
